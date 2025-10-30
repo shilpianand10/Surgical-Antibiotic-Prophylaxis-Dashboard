@@ -13,12 +13,17 @@ const Dashboard = () => {
 
   const generateSampleData = () => {
     const departments = ['Cardiac', 'OBG', 'Ortho', 'Neuro', 'G I Surgery', 'ENT', 'Urology', 'Plastic Surgery', 'Head & Neck', 'Pead Cardiac', 'Gen Surgery', 'HBP'];
-    const months = ['09.05.24', '10.06.24', '15.07.24', '20.08.24', '01.09.25'];
+    const months = [];
+    for (let y = 24; y <= 25; y++) {
+      for (let m = (y === 24 ? 5 : 1); m <= (y === 25 ? 9 : 12); m++) {
+        months.push(`01.${m.toString().padStart(2,'0')}.${y}`);
+      }
+    }
     const sampleData = [];
-    
+
     months.forEach(date => {
       departments.forEach(dept => {
-        const numSurgeries = Math.floor(Math.random() * 4) + 2;
+        const numSurgeries = Math.random() > 0.33 ? 1 : 2; // Average ~1.33 surgeries per dept per month to reach ~273 total
         for (let i = 0; i < numSurgeries; i++) {
           sampleData.push({
             date: date,
@@ -32,7 +37,7 @@ const Dashboard = () => {
         }
       });
     });
-    
+
     return sampleData;
   };
 
