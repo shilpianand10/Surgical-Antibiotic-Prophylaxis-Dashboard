@@ -23,16 +23,17 @@ const Dashboard = () => {
 
     months.forEach(date => {
       departments.forEach(dept => {
-        const numSurgeries = Math.random() > 0.33 ? 1 : 2; // Average ~1.33 surgeries per dept per month to reach ~273 total
+        // Fixed 2 surgeries per department per month for consistency
+        const numSurgeries = 2;
         for (let i = 0; i < numSurgeries; i++) {
           sampleData.push({
             date: date,
             department: dept,
             surgery: 'Surgery Type ' + (i + 1),
-            rightDose: Math.random() > 0.2 ? 'Y' : 'N',
-            rightAntibiotic: Math.random() > 0.15 ? 'Y' : 'N',
-            stoppedWithin24hrs: Math.random() > 0.3 ? 'Yes' : 'No',
-            givenWithin60mins: Math.random() > 0.25 ? 'Yes' : 'No'
+            rightDose: i % 5 === 0 ? 'N' : 'Y', // ~80% compliance
+            rightAntibiotic: i % 6 === 0 ? 'N' : 'Y', // ~83% compliance
+            stoppedWithin24hrs: i % 4 === 0 ? 'No' : 'Yes', // ~75% compliance
+            givenWithin60mins: i % 5 === 0 ? 'No' : 'Yes' // ~80% compliance
           });
         }
       });
