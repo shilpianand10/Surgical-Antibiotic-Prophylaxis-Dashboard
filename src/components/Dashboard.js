@@ -11,46 +11,66 @@ const Dashboard = () => {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 
-  const generateSampleData = () => {
-    const departments = ['Cardiac', 'OBG', 'Ortho', 'Neuro', 'G I Surgery', 'ENT', 'Urology', 'Plastic Surgery', 'Head & Neck', 'Pead Cardiac', 'Gen Surgery', 'HBP'];
-    const months = [];
-    for (let y = 24; y <= 25; y++) {
-      for (let m = (y === 24 ? 5 : 1); m <= (y === 25 ? 9 : 12); m++) {
-        months.push(`01.${m.toString().padStart(2,'0')}.${y}`);
+  const fetchDataFromSheet = async () => {
+    try {
+      const response = await fetch('https://docs.google.com/spreadsheets/d/1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk/export?format=csv');
+      const csvText = await response.text();
+      const rows = csvText.split('\n').map(row => row.split(','));
+
+      const data = [];
+      // Skip header rows (first 2)
+      for (let i = 2; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 18) continue; // Skip incomplete rows
+
+        const dateStr = row[2]?.trim(); // Date of surgery
+        const department = row[6]?.trim(); // Department
+        const rightDose = row[14]?.trim(); // Antibiotic given at right dose
+        const rightAntibiotic = row[15]?.trim(); // Right antibiotic given as per the existing policy
+        const stoppedWithin24hrs = row[16]?.trim(); // Antibiotic stopped within 24hrs
+        const givenWithin60mins = row[17]?.trim(); // Antibiotic given within 60mins of incision
+        const postOpAntibiotics = row[18]?.trim(); // Post op Antibiotics
+
+        if (!dateStr || !department) continue;
+
+        // Check if date is within October 2023 to Sep 2025
+        const date = parseDate(dateStr);
+        const startDate = new Date(2023, 9, 1); // October 1, 2023
+        const endDate = new Date(2025, 8, 30); // Sep 30, 2025
+        if (date < startDate || date > endDate) continue;
+
+        // Determine no discharge prophylaxis: if Post op Antibiotics indicates discharge with antibiotics
+        const noDischargeProphylaxis = !postOpAntibiotics || postOpAntibiotics.toLowerCase().includes('no') ||
+                                      postOpAntibiotics.toLowerCase().includes('discharge') ? 'Y' : 'N';
+
+        data.push({
+          date: dateStr,
+          department: department,
+          surgery: row[7]?.trim() || 'Unknown Surgery',
+          rightDose: rightDose === 'Y' ? 'Y' : 'N',
+          rightAntibiotic: rightAntibiotic === 'Y' ? 'Y' : 'N',
+          stoppedWithin24hrs: stoppedWithin24hrs === 'Yes' ? 'Yes' : 'No',
+          givenWithin60mins: givenWithin60mins === 'Yes' ? 'Yes' : 'No',
+          noDischargeProphylaxis: noDischargeProphylaxis
+        });
       }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching data from sheet:', error);
+      return [];
     }
-    const sampleData = [];
-
-    months.forEach(date => {
-      departments.forEach(dept => {
-        // Fixed 2 surgeries per department per month for consistency
-        const numSurgeries = 2;
-        for (let i = 0; i < numSurgeries; i++) {
-          sampleData.push({
-            date: date,
-            department: dept,
-            surgery: 'Surgery Type ' + (i + 1),
-            rightDose: i % 5 === 0 ? 'N' : 'Y', // ~80% compliance
-            rightAntibiotic: i % 6 === 0 ? 'N' : 'Y', // ~83% compliance
-            stoppedWithin24hrs: i % 4 === 0 ? 'No' : 'Yes', // ~75% compliance
-            givenWithin60mins: i % 5 === 0 ? 'No' : 'Yes' // ~80% compliance
-          });
-        }
-      });
-    });
-
-    return sampleData;
   };
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const sampleData = generateSampleData();
-      setData(sampleData);
+      const sheetData = await fetchDataFromSheet();
+      setData(sheetData);
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Error:', error);
-      setData(generateSampleData());
+      setData([]);
     } finally {
       setLoading(false);
     }
@@ -83,19 +103,34 @@ const Dashboard = () => {
 
   const months = useMemo(() => {
     const monthSet = new Set();
+
+    // Generate all months from October 2023 to September 2025
+    const startDate = new Date(2023, 9, 1); // October 2023
+    const endDate = new Date(2025, 8, 1); // September 2025
+    for (let d = new Date(startDate); d <= endDate; d.setMonth(d.getMonth() + 1)) {
+      const year = d.getFullYear().toString().slice(-2);
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      const dateStr = `01.${month}.${year}`;
+      const monthYear = formatMonthYear(dateStr);
+      if (monthYear) {
+        monthSet.add(monthYear);
+      }
+    }
+
+    // Add months from actual data (in case new months are added beyond the range)
     data.forEach(item => {
       const monthYear = formatMonthYear(item.date);
       if (monthYear) {
         monthSet.add(monthYear);
       }
     });
-    
+
     const sortedMonths = Array.from(monthSet).sort((a, b) => {
       const dateA = new Date(a);
       const dateB = new Date(b);
       return dateA - dateB;
     });
-    
+
     return ['All', ...sortedMonths];
   }, [data]);
 
@@ -123,12 +158,13 @@ const Dashboard = () => {
 
   const metrics = useMemo(() => {
     const total = filteredData.length;
-    if (total === 0) return { total: 0, rightDose: 0, rightAntibiotic: 0, stopped24hrs: 0, given60mins: 0, overallCompliance: 0 };
+    if (total === 0) return { total: 0, rightDose: 0, rightAntibiotic: 0, stopped24hrs: 0, given60mins: 0, noDischargeProphylaxis: 0, overallCompliance: 0 };
 
     let rightDoseCount = 0;
     let rightAntibioticCount = 0;
     let stopped24hrsCount = 0;
     let given60minsCount = 0;
+    let noDischargeProphylaxisCount = 0;
     let fullyCompliantCount = 0;
 
     filteredData.forEach(item => {
@@ -136,12 +172,14 @@ const Dashboard = () => {
       const hasRightAntibiotic = item.rightAntibiotic && (item.rightAntibiotic.toUpperCase() === 'Y' || item.rightAntibiotic.toUpperCase() === 'YES' || item.rightAntibiotic.toUpperCase() === 'JUSTIFIED');
       const hasStopped24hrs = item.stoppedWithin24hrs && (item.stoppedWithin24hrs.toUpperCase() === 'YES' || item.stoppedWithin24hrs.toUpperCase() === 'Y');
       const hasGiven60mins = item.givenWithin60mins && (item.givenWithin60mins.toUpperCase() === 'YES' || item.givenWithin60mins.toUpperCase() === 'Y');
+      const hasNoDischargeProphylaxis = item.noDischargeProphylaxis && (item.noDischargeProphylaxis.toUpperCase() === 'Y' || item.noDischargeProphylaxis.toUpperCase() === 'YES');
 
       if (hasRightDose) rightDoseCount++;
       if (hasRightAntibiotic) rightAntibioticCount++;
       if (hasStopped24hrs) stopped24hrsCount++;
       if (hasGiven60mins) given60minsCount++;
-      if (hasRightDose && hasRightAntibiotic && hasStopped24hrs && hasGiven60mins) fullyCompliantCount++;
+      if (hasNoDischargeProphylaxis) noDischargeProphylaxisCount++;
+      if (hasRightDose && hasRightAntibiotic && hasStopped24hrs && hasGiven60mins && hasNoDischargeProphylaxis) fullyCompliantCount++;
     });
 
     return {
@@ -150,6 +188,7 @@ const Dashboard = () => {
       rightAntibiotic: ((rightAntibioticCount / total) * 100).toFixed(1),
       stopped24hrs: ((stopped24hrsCount / total) * 100).toFixed(1),
       given60mins: ((given60minsCount / total) * 100).toFixed(1),
+      noDischargeProphylaxis: ((noDischargeProphylaxisCount / total) * 100).toFixed(1),
       overallCompliance: ((fullyCompliantCount / total) * 100).toFixed(1)
     };
   }, [filteredData]);
@@ -186,59 +225,68 @@ const Dashboard = () => {
   }, [data]);
 
   const departmentPieData = useMemo(() => {
-    const deptMap = {};
-    
-    filteredData.forEach(item => {
-      if (!item.department) return;
-      
-      if (!deptMap[item.department]) {
-        deptMap[item.department] = {
-          total: 0,
-          rightDose: 0,
-          rightAntibiotic: 0,
-          stopped24hrs: 0,
-          given60mins: 0
-        };
-      }
-      
-      deptMap[item.department].total++;
-      
-      const hasRightDose = item.rightDose && (item.rightDose.toUpperCase() === 'Y' || item.rightDose.toUpperCase() === 'YES');
-      const hasRightAntibiotic = item.rightAntibiotic && (item.rightAntibiotic.toUpperCase() === 'Y' || item.rightAntibiotic.toUpperCase() === 'YES' || item.rightAntibiotic.toUpperCase() === 'JUSTIFIED');
-      const hasStopped24hrs = item.stoppedWithin24hrs && (item.stoppedWithin24hrs.toUpperCase() === 'YES' || item.stoppedWithin24hrs.toUpperCase() === 'Y');
+  const deptMap = {};
+
+  filteredData.forEach(item => {
+  if (!item.department) return;
+
+  if (!deptMap[item.department]) {
+  deptMap[item.department] = {
+  total: 0,
+  rightDose: 0,
+  rightAntibiotic: 0,
+  stopped24hrs: 0,
+  given60mins: 0,
+    noDischargeProphylaxis: 0
+    };
+  }
+
+  deptMap[item.department].total++;
+
+  const hasRightDose = item.rightDose && (item.rightDose.toUpperCase() === 'Y' || item.rightDose.toUpperCase() === 'YES');
+  const hasRightAntibiotic = item.rightAntibiotic && (item.rightAntibiotic.toUpperCase() === 'Y' || item.rightAntibiotic.toUpperCase() === 'YES' || item.rightAntibiotic.toUpperCase() === 'JUSTIFIED');
+  const hasStopped24hrs = item.stoppedWithin24hrs && (item.stoppedWithin24hrs.toUpperCase() === 'YES' || item.stoppedWithin24hrs.toUpperCase() === 'Y');
       const hasGiven60mins = item.givenWithin60mins && (item.givenWithin60mins.toUpperCase() === 'YES' || item.givenWithin60mins.toUpperCase() === 'Y');
+  const hasNoDischargeProphylaxis = item.noDischargeProphylaxis && (item.noDischargeProphylaxis.toUpperCase() === 'Y' || item.noDischargeProphylaxis.toUpperCase() === 'YES');
 
-      if (hasRightDose) deptMap[item.department].rightDose++;
-      if (hasRightAntibiotic) deptMap[item.department].rightAntibiotic++;
-      if (hasStopped24hrs) deptMap[item.department].stopped24hrs++;
+  if (hasRightDose) deptMap[item.department].rightDose++;
+  if (hasRightAntibiotic) deptMap[item.department].rightAntibiotic++;
+    if (hasStopped24hrs) deptMap[item.department].stopped24hrs++;
       if (hasGiven60mins) deptMap[item.department].given60mins++;
-    });
+    if (hasNoDischargeProphylaxis) deptMap[item.department].noDischargeProphylaxis++;
+  });
 
-    const rightDosePie = Object.keys(deptMap).map(dept => ({
+  const rightDosePie = Object.keys(deptMap).map(dept => ({
       name: dept,
-      value: parseFloat(((deptMap[dept].rightDose / deptMap[dept].total) * 100).toFixed(1))
-    }));
+    value: parseFloat(((deptMap[dept].rightDose / deptMap[dept].total) * 100).toFixed(1))
+  }));
 
-    const rightAntibioticPie = Object.keys(deptMap).map(dept => ({
+  const rightAntibioticPie = Object.keys(deptMap).map(dept => ({
       name: dept,
-      value: parseFloat(((deptMap[dept].rightAntibiotic / deptMap[dept].total) * 100).toFixed(1))
-    }));
+    value: parseFloat(((deptMap[dept].rightAntibiotic / deptMap[dept].total) * 100).toFixed(1))
+  }));
 
-    const stopped24hrsPie = Object.keys(deptMap).map(dept => ({
+  const stopped24hrsPie = Object.keys(deptMap).map(dept => ({
       name: dept,
-      value: parseFloat(((deptMap[dept].stopped24hrs / deptMap[dept].total) * 100).toFixed(1))
-    }));
+    value: parseFloat(((deptMap[dept].stopped24hrs / deptMap[dept].total) * 100).toFixed(1))
+  }));
 
-    const given60minsPie = Object.keys(deptMap).map(dept => ({
+  const given60minsPie = Object.keys(deptMap).map(dept => ({
       name: dept,
-      value: parseFloat(((deptMap[dept].given60mins / deptMap[dept].total) * 100).toFixed(1))
+    value: parseFloat(((deptMap[dept].given60mins / deptMap[dept].total) * 100).toFixed(1))
+  }));
+
+  const noDischargeProphylaxisPie = Object.keys(deptMap).map(dept => ({
+  name: dept,
+    value: parseFloat(((deptMap[dept].noDischargeProphylaxis / deptMap[dept].total) * 100).toFixed(1))
     }));
 
     return {
       rightDose: rightDosePie,
       rightAntibiotic: rightAntibioticPie,
       stopped24hrs: stopped24hrsPie,
-      given60mins: given60minsPie
+      given60mins: given60minsPie,
+      noDischargeProphylaxis: noDischargeProphylaxisPie
     };
   }, [filteredData]);
 
@@ -332,57 +380,65 @@ const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-600 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex-1">
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Total Surgeries</p>
-                <p className="text-4xl font-bold mt-2 text-blue-600">{metrics.total}</p>
-                <p className="text-gray-600 text-sm mt-1">Procedures</p>
-              </div>
-              <div className="bg-blue-100 p-3 rounded-full">
-                <Activity size={28} className="text-blue-600" />
-              </div>
-            </div>
-          </div>
-          
+        <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-600 hover:shadow-lg transition-shadow">
+        <div className="flex items-center justify-between mb-2">
+        <div className="flex-1">
+        <p className="text-gray-500 text-xs font-medium uppercase tracking-wider">Total Surgeries</p>
+        <p className="text-4xl font-bold mt-2 text-blue-600">{metrics.total}</p>
+        <p className="text-gray-600 text-sm mt-1">Procedures</p>
+        </div>
+        <div className="bg-blue-100 p-3 rounded-full">
+        <Activity size={28} className="text-blue-600" />
+        </div>
+        </div>
+        </div>
+
+        <MetricCard
+        title="Overall Compliance"
+        value={metrics.overallCompliance}
+        subtitle="All criteria met"
+        icon={TrendingUp}
+        color="#059669"
+        />
+
+        <MetricCard
+        title="Right Dose"
+        value={metrics.rightDose}
+        subtitle="Correct dosage"
+        icon={Pill}
+        color="#10b981"
+        />
+
+        <MetricCard
+        title="Right Antibiotic"
+        value={metrics.rightAntibiotic}
+        subtitle="Per policy"
+        icon={CheckCircle}
+        color="#8b5cf6"
+        />
+
+        <MetricCard
+        title="Stopped ≤24hrs"
+        value={metrics.stopped24hrs}
+        subtitle="Within 24 hours"
+        icon={Clock}
+        color="#f59e0b"
+        />
+
+        <MetricCard
+        title="Given ≤60mins"
+        value={metrics.given60mins}
+        subtitle="Before incision"
+        icon={CheckCircle}
+        color="#06b6d4"
+        />
+
           <MetricCard
-            title="Overall Compliance"
-            value={metrics.overallCompliance}
-            subtitle="All criteria met"
-            icon={TrendingUp}
-            color="#059669"
-          />
-          
-          <MetricCard
-            title="Right Dose"
-            value={metrics.rightDose}
-            subtitle="Correct dosage"
-            icon={Pill}
-            color="#10b981"
-          />
-          
-          <MetricCard
-            title="Right Antibiotic"
-            value={metrics.rightAntibiotic}
-            subtitle="Per policy"
-            icon={CheckCircle}
-            color="#8b5cf6"
-          />
-          
-          <MetricCard
-            title="Stopped ≤24hrs"
-            value={metrics.stopped24hrs}
-            subtitle="Within 24 hours"
-            icon={Clock}
-            color="#f59e0b"
-          />
-          
-          <MetricCard
-            title="Given ≤60mins"
-            value={metrics.given60mins}
-            subtitle="Before incision"
-            icon={CheckCircle}
-            color="#06b6d4"
+            title="No Discharge Prophylaxis"
+            value={metrics.noDischargeProphylaxis}
+            subtitle="No post-op antibiotics"
+            icon={XCircle}
+            color="#ef4444"
           />
         </div>
 
@@ -411,7 +467,7 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
               Right Dose Compliance by Department
@@ -495,9 +551,35 @@ const Dashboard = () => {
               Given Within 60mins by Department
             </h2>
             <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+            <Pie
+            data={departmentPieData.given60mins}
+            cx="50%"
+            cy="50%"
+            labelLine={false}
+            label={(entry) => entry.value.toFixed(1) + '%'}
+            outerRadius={100}
+            fill="#8884d8"
+            dataKey="value"
+            >
+            {departmentPieData.given60mins.map((entry, index) => (
+            <Cell key={index} fill={COLORS[index % COLORS.length]} />
+            ))}
+            </Pie>
+            <Tooltip formatter={(value) => value.toFixed(1) + '%'} />
+            <Legend />
+            </PieChart>
+            </ResponsiveContainer>
+            </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              No Discharge Prophylaxis by Department
+            </h2>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={departmentPieData.given60mins}
+                  data={departmentPieData.noDischargeProphylaxis}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -506,7 +588,7 @@ const Dashboard = () => {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {departmentPieData.given60mins.map((entry, index) => (
+                  {departmentPieData.noDischargeProphylaxis.map((entry, index) => (
                     <Cell key={index} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -525,56 +607,65 @@ const Dashboard = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Surgery</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Dose</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Antibiotic</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">24hrs</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">60mins</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Surgery</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Dose</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Antibiotic</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">24hrs</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">60mins</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">No Discharge</th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredData.slice(0, 20).map((item, idx) => {
-                  const hasRightDose = item.rightDose && (item.rightDose.toUpperCase() === 'Y' || item.rightDose.toUpperCase() === 'YES');
-                  const hasRightAntibiotic = item.rightAntibiotic && (item.rightAntibiotic.toUpperCase() === 'Y' || item.rightAntibiotic.toUpperCase() === 'YES' || item.rightAntibiotic.toUpperCase() === 'JUSTIFIED');
-                  const hasStopped24hrs = item.stoppedWithin24hrs && (item.stoppedWithin24hrs.toUpperCase() === 'YES' || item.stoppedWithin24hrs.toUpperCase() === 'Y');
-                  const hasGiven60mins = item.givenWithin60mins && (item.givenWithin60mins.toUpperCase() === 'YES' || item.givenWithin60mins.toUpperCase() === 'Y');
-                  const isFullyCompliant = hasRightDose && hasRightAntibiotic && hasStopped24hrs && hasGiven60mins;
-                  
-                  return (
-                    <tr key={idx} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.department}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{item.surgery}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {hasRightDose ? (
-                          <CheckCircle className="inline text-green-500" size={20} />
-                        ) : (
-                          <XCircle className="inline text-red-500" size={20} />
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {hasRightAntibiotic ? (
-                          <CheckCircle className="inline text-green-500" size={20} />
-                        ) : (
-                          <XCircle className="inline text-red-500" size={20} />
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {hasStopped24hrs ? (
-                          <CheckCircle className="inline text-green-500" size={20} />
-                        ) : (
-                          <XCircle className="inline text-red-500" size={20} />
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {hasGiven60mins ? (
-                          <CheckCircle className="inline text-green-500" size={20} />
-                        ) : (
-                          <XCircle className="inline text-red-500" size={20} />
-                        )}
+                const hasRightDose = item.rightDose && (item.rightDose.toUpperCase() === 'Y' || item.rightDose.toUpperCase() === 'YES');
+                const hasRightAntibiotic = item.rightAntibiotic && (item.rightAntibiotic.toUpperCase() === 'Y' || item.rightAntibiotic.toUpperCase() === 'YES' || item.rightAntibiotic.toUpperCase() === 'JUSTIFIED');
+                const hasStopped24hrs = item.stoppedWithin24hrs && (item.stoppedWithin24hrs.toUpperCase() === 'YES' || item.stoppedWithin24hrs.toUpperCase() === 'Y');
+                const hasGiven60mins = item.givenWithin60mins && (item.givenWithin60mins.toUpperCase() === 'YES' || item.givenWithin60mins.toUpperCase() === 'Y');
+                const hasNoDischarge = item.noDischargeProphylaxis && (item.noDischargeProphylaxis.toUpperCase() === 'Y' || item.noDischargeProphylaxis.toUpperCase() === 'YES');
+                const isFullyCompliant = hasRightDose && hasRightAntibiotic && hasStopped24hrs && hasGiven60mins && hasNoDischarge;
+
+                return (
+                <tr key={idx} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.department}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{item.surgery}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                {hasRightDose ? (
+                  <CheckCircle className="inline text-green-500" size={20} />
+                ) : (
+                  <XCircle className="inline text-red-500" size={20} />
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                {hasRightAntibiotic ? (
+                  <CheckCircle className="inline text-green-500" size={20} />
+                ) : (
+                  <XCircle className="inline text-red-500" size={20} />
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                {hasStopped24hrs ? (
+                  <CheckCircle className="inline text-green-500" size={20} />
+                ) : (
+                  <XCircle className="inline text-red-500" size={20} />
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                {hasGiven60mins ? (
+                  <CheckCircle className="inline text-green-500" size={20} />
+                ) : (
+                  <XCircle className="inline text-red-500" size={20} />
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                {hasNoDischarge ? (
+                  <CheckCircle className="inline text-green-500" size={20} />
+                  ) : (
+                      <XCircle className="inline text-red-500" size={20} />
+                      )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span className={'px-2 py-1 rounded text-xs font-semibold ' + (isFullyCompliant ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')}>
