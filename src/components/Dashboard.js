@@ -13,51 +13,12 @@ const Dashboard = () => {
 
   const fetchDataFromSheet = async () => {
     try {
-      const response = await fetch('https://docs.google.com/spreadsheets/d/1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk/export?format=csv');
-      const csvText = await response.text();
-      const rows = csvText.split('\n').map(row => row.split(','));
-
-      const data = [];
-      // Skip header rows (first 2)
-      for (let i = 2; i < rows.length; i++) {
-        const row = rows[i];
-        if (row.length < 18) continue; // Skip incomplete rows
-
-        const dateStr = row[2]?.trim(); // Date of surgery
-        const department = row[6]?.trim(); // Department
-        const rightDose = row[14]?.trim(); // Antibiotic given at right dose
-        const rightAntibiotic = row[15]?.trim(); // Right antibiotic given as per the existing policy
-        const stoppedWithin24hrs = row[16]?.trim(); // Antibiotic stopped within 24hrs
-        const givenWithin60mins = row[17]?.trim(); // Antibiotic given within 60mins of incision
-        const postOpAntibiotics = row[18]?.trim(); // Post op Antibiotics
-
-        if (!dateStr || !department) continue;
-
-        // Check if date is within October 2023 to Sep 2025
-        const date = parseDate(dateStr);
-        const startDate = new Date(2023, 9, 1); // October 1, 2023
-        const endDate = new Date(2025, 8, 30); // Sep 30, 2025
-        if (date < startDate || date > endDate) continue;
-
-        // Determine no discharge prophylaxis: if Post op Antibiotics indicates discharge with antibiotics
-        const noDischargeProphylaxis = !postOpAntibiotics || postOpAntibiotics.toLowerCase().includes('no') ||
-                                      postOpAntibiotics.toLowerCase().includes('discharge') ? 'Y' : 'N';
-
-        data.push({
-          date: dateStr,
-          department: department,
-          surgery: row[7]?.trim() || 'Unknown Surgery',
-          rightDose: rightDose === 'Y' ? 'Y' : 'N',
-          rightAntibiotic: rightAntibiotic === 'Y' ? 'Y' : 'N',
-          stoppedWithin24hrs: stoppedWithin24hrs === 'Yes' ? 'Yes' : 'No',
-          givenWithin60mins: givenWithin60mins === 'Yes' ? 'Yes' : 'No',
-          noDischargeProphylaxis: noDischargeProphylaxis
-        });
-      }
-
+      const response = await fetch('/api/data');
+      const data = await response.json();
+      console.log('Fetched data length:', data.length); // Debug log
       return data;
     } catch (error) {
-      console.error('Error fetching data from sheet:', error);
+      console.error('Error fetching data from API:', error);
       return [];
     }
   };
