@@ -70,7 +70,7 @@ export default async (req, res) => {
 
       data.push({
         date: formattedDate,
-        department: department,
+        department: department.trim(),
         surgery: row[7]?.trim() || 'Unknown Surgery',
         rightDose: rightDoseCalc,
         rightAntibiotic: rightAntibioticCalc,
