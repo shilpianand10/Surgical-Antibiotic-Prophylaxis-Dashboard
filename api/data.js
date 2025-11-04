@@ -1,11 +1,21 @@
+const { google } = require('googleapis');
+
 export default async (req, res) => {
   console.log('Starting API call');
   try {
-    // Fetch raw data from the first sheet
-    const response = await fetch('https://docs.google.com/spreadsheets/d/1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk/export?format=csv');
-    console.log('Fetch response status:', response.status);
-    const csvText = await response.text();
-    const rows = csvText.split('\n').map(row => row.split(','));
+    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    });
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: '1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk',
+      range: 'Sheet1',
+    });
+    console.log('Sheets API response status:', response.status);
+    const rows = response.data.values;
 
     const data = [];
     // Skip header rows (first 2)
