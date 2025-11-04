@@ -63,10 +63,13 @@ export default async (req, res) => {
 
       // No discharge prophylaxis: blank or "no antibiotic" in post op
       const noDischargeCalc = (!postOpAntibiotics || postOpAntibiotics.toLowerCase().includes('no antibiotic') ||
-                              postOpAntibiotics.toLowerCase().includes('no antibiotics')) ? 'Y' : 'N';
+      postOpAntibiotics.toLowerCase().includes('no antibiotics')) ? 'Y' : 'N';
+
+      // Format date as YYYY-MM-DD for better parsing
+      const formattedDate = `${fullYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
       data.push({
-        date: dateStr,
+        date: formattedDate,
         department: department,
         surgery: row[7]?.trim() || 'Unknown Surgery',
         rightDose: rightDoseCalc,
