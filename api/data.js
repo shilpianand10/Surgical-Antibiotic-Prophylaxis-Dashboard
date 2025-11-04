@@ -1,7 +1,9 @@
 export default async (req, res) => {
+  console.log('Starting API call');
   try {
     // Fetch raw data from the first sheet
     const response = await fetch('https://docs.google.com/spreadsheets/d/1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk/export?format=csv');
+    console.log('Fetch response status:', response.status);
     const csvText = await response.text();
     const rows = csvText.split('\n').map(row => row.split(','));
 
@@ -9,7 +11,7 @@ export default async (req, res) => {
     // Skip header rows (first 2)
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
-      if (row.length < 18) continue; // Skip incomplete rows
+      if (row.length < 15) continue; // Skip incomplete rows
 
       const dateStr = row[2]?.trim(); // Date of surgery
       const department = row[6]?.trim(); // Department
@@ -80,6 +82,7 @@ export default async (req, res) => {
       });
     }
 
+    console.log('Data length:', data.length);
     res.status(200).json(data);
   } catch (error) {
     console.error('Error fetching data:', error);
