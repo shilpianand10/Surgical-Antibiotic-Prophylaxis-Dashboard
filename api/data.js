@@ -4,8 +4,8 @@ export default async (req, res) => {
     const spreadsheetId = '1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk';
 
     let allRows = [];
-    // Fetch data from all sheets using gid (0 to 23 based on sheet order)
-    for (let gid = 0; gid <= 0; gid++) {
+    // Fetch data from all sheets using gid (1 to 24 based on sheet order)
+    for (let gid = 1; gid <= 24; gid++) {
       try {
         const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
         const response = await fetch(url);
