@@ -9,9 +9,11 @@ export default async (req, res) => {
       try {
         const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
         const response = await fetch(url);
+        console.log(`GID ${gid}: response status ${response.status}`);
         if (response.ok) {
           const csvText = await response.text();
           const rows = csvText.split('\n').map(row => row.split(','));
+          console.log(`GID ${gid}: rows length ${rows.length}`);
           if (rows.length > 2) { // Has data
             allRows = allRows.concat(rows.slice(2)); // Skip header rows
           }
