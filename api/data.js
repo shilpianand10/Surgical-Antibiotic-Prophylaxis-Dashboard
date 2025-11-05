@@ -1,26 +1,31 @@
-const { google } = require('googleapis');
-
 export default async (req, res) => {
-  console.log('Starting API call');
+  console.log('Starting API call v2');
   try {
-    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS);
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
-    const sheets = google.sheets({ version: 'v4', auth });
+    const spreadsheetId = '1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk';
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: '1X0WMigtANT6v9m5wg514emwUumOHvYv7E5vMw4ZxAdk',
-      range: 'Sheet1',
-    });
-    console.log('Sheets API response status:', response.status);
-    const rows = response.data.values;
+    let allRows = [];
+    // Fetch data from all sheets using gid (0 to 23 based on sheet order)
+    for (let gid = 0; gid <= 23; gid++) {
+      try {
+        const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const csvText = await response.text();
+          const rows = csvText.split('\n').map(row => row.split(','));
+          if (rows.length > 2) { // Has data
+            allRows = allRows.concat(rows.slice(2)); // Skip header rows
+          }
+        }
+      } catch (e) {
+        console.log(`Failed to fetch gid ${gid}:`, e.message);
+      }
+    }
+    console.log('Total rows fetched:', allRows.length);
 
     const data = [];
-    // Skip header rows (first 2)
-    for (let i = 2; i < rows.length; i++) {
-      const row = rows[i];
+    // Process all rows from all sheets
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i];
       if (row.length < 15) continue; // Skip incomplete rows
 
       const dateStr = row[2]?.trim(); // Date of surgery
